@@ -748,11 +748,21 @@ func preRun(cmd *cobra.Command, argv []string) error {
 		}
 	}
 
+	err = promptClusterPrivacy(fs, connection)
+	if err != nil {
+		return err
+	}
+
 	if args.existingVPC.SubnetIDs != "" {
 		args.existingVPC.Enabled = true
 	}
 
 	err = promptExistingVPC(fs, connection)
+	if err != nil {
+		return err
+	}
+
+	err = promptPrivateServiceConnect(fs)
 	if err != nil {
 		return err
 	}
@@ -768,11 +778,6 @@ func preRun(cmd *cobra.Command, argv []string) error {
 	}
 
 	err = promptNetwork(fs)
-	if err != nil {
-		return err
-	}
-
-	err = promptPrivateServiceConnect(fs)
 	if err != nil {
 		return err
 	}
@@ -1334,6 +1339,10 @@ func promptExistingVPC(fs *pflag.FlagSet, connection *sdk.Connection) error {
 	return err
 }
 
+func promptClusterPrivacy(fs *pflag.FlagSet, connection *sdk.Connection) error {
+	return arguments.PromptBool(fs, "private")
+}
+
 func promptCCS(fs *pflag.FlagSet, presetCCS bool) error {
 	var err error
 	if !presetCCS {
@@ -1475,10 +1484,7 @@ func promptNetwork(fs *pflag.FlagSet) error {
 	if err != nil {
 		return err
 	}
-	err = arguments.PromptBool(fs, "private")
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 
@@ -1500,7 +1506,11 @@ func promptPrivateServiceConnect(fs *pflag.FlagSet) error {
 		!args.existingVPC.Enabled || !args.private {
 		return nil
 	}
-	isPSC := (args.gcpPrivateSvcConnect.SvcAttachmentSubnet != "")
+
+	//if Wif cluster and private is enabled then has to be PSC
+	isWif := (args.gcpAuthentication.Type == c.AuthenticationWif)
+	isPSC := (args.gcpPrivateSvcConnect.SvcAttachmentSubnet != "") || isWif
+
 	if !isPSC && args.interactive {
 		var err error
 		isPSC, err = interactive.GetBool(interactive.Input{
@@ -1519,7 +1529,10 @@ func promptPrivateServiceConnect(fs *pflag.FlagSet) error {
 			return err
 		}
 	}
-
+	if isWif && args.gcpPrivateSvcConnect.SvcAttachmentSubnet == "" {
+		return fmt.Errorf(
+			"flag 'psc-subnet' is required when cluster is 'private' and GCP authentication type is %s", c.AuthenticationWif)
+	}
 	return nil
 }
 
